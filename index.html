@@ -1,398 +1,299 @@
+<!-- engineer_week_fusion.html / 2048 + 六角堆疊挑戰版 -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>Engineer Week — 2048 & Hextris</title>
-<style>
-  :root{--bg:#0b0b0f;--panel:#161821;--muted:#8b90a6;--text:#f6f7fb;--accent:#7ee787;--accent2:#5fb3ff;--danger:#ff6b6b}
-  *{box-sizing:border-box} html,body{height:100%} body{margin:0;background:linear-gradient(180deg,#0b0b0f 0%,#12131a 100%);color:var(--text);font:16px/1.4 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
-  .wrap{max-width:1100px;margin:0 auto;padding:18px}
-  .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;backdrop-filter:blur(6px);box-shadow:0 10px 30px rgba(0,0,0,.25)}
-  .row{display:flex;gap:16px;flex-wrap:wrap}
-  .grow{flex:1 1 480px}
-  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  button{cursor:pointer;border:1px solid rgba(255,255,255,.12);background:#1b1e28;color:var(--text);padding:10px 14px;border-radius:12px}
-  button:hover{border-color:rgba(255,255,255,.3)}
-  .btn-accent{background:linear-gradient(90deg,#6ee7b7,#3b82f6);border:none}
-  .btn-danger{background:#2b1111;border-color:#5c1a1a;color:#ffd8d8}
-  .muted{color:var(--muted)}
-  .tabs{display:flex;gap:8px;margin:8px 0 16px}
-  .tab{padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#151824;cursor:pointer}
-  .tab.active{background:#233; border-color:#3f556e}
-  .hide{display:none !important}
-  /* 2048 styles */
-  .g2048{width:min(460px,92vw);margin:8px 0}
-  .g2048 .board{position:relative;background:#1a1d27;border-radius:12px;padding:12px;display:grid;gap:12px}
-  .g2048 .row{gap:12px}
-  .g2048 .cell{background:#0f1219;border-radius:8px;aspect-ratio:1}
-  .g2048 .tile{position:absolute;display:flex;align-items:center;justify-content:center;font-weight:800;border-radius:8px;box-shadow:0 8px 18px rgba(0,0,0,.35)}
-  .scorebox{display:flex;gap:10px;align-items:center}
-  .pill{background:#0f1219;border:1px solid rgba(255,255,255,.08);padding:10px 12px;border-radius:12px;min-width:110px;text-align:center}
-  .pill b{display:block;font-size:20px}
-  .grid4{grid-template-columns:repeat(4,1fr)}
-  /* Hextris */
-  .hex-wrap{position:relative}
-  canvas#hextris{display:block;width:min(460px,92vw);height:min(460px,92vw);background:#0e1119;border-radius:12px}
-  .touch-left,.touch-right{position:absolute;top:0;bottom:0;width:50%;opacity:.05}
-  .touch-left{left:0;background:#0ff}
-  .touch-right{right:0;background:#ff0}
-  /* Leaderboard */
-  input,select{background:#10131b;border:1px solid rgba(255,255,255,.12);color:var(--text);padding:10px 12px;border-radius:10px}
-  table{width:100%;border-collapse:collapse}
-  th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
-  .badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#18202b;border:1px solid #28435f;font-size:12px}
-  .small{font-size:12px}
-  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineer Week｜2048 + 六角堆疊挑戰</title>
+  <!-- TailwindCSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React + ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    html,body{background:#000;}
+    canvas{touch-action:none;}
+  </style>
 </head>
-<body>
-<div class="wrap">
-  <h1 style="margin:8px 0 4px">工程師節小遊戲（2048 + Hextris）</h1>
-  <div class="muted small">MIT-licensed 2048 by Gabriele Cirulli（modified） · Hextris-lite inspired by Hextris/hextris</div>
+<body class="bg-black text-white">
+<div id="root"></div>
 
-  <div class="tabs">
-    <div id="tab-2048" class="tab active" onclick="switchTab('game2048')">2048</div>
-    <div id="tab-hex" class="tab" onclick="switchTab('gameHex')">Hextris-lite</div>
-  </div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
 
-  <div class="row">
-    <section id="game2048" class="grow card" style="padding:16px">
-      <div class="toolbar" style="justify-content:space-between">
-        <div class="scorebox">
-          <div class="pill">分數<b id="score">0</b></div>
-          <div class="pill">最佳<b id="best">0</b></div>
-          <div class="pill">步數<b id="moves">0</b></div>
-        </div>
-        <div class="toolbar">
-          <button onclick="g.restart()" class="btn-accent">重新開始</button>
-          <button onclick="g.undo()" class="btn">復原一步</button>
-        </div>
-      </div>
-      <div class="g2048">
-        <div id="board" class="board grid4"></div>
-      </div>
-      <div class="muted small">操作：鍵盤 ←↑↓→ 或手機滑動</div>
-    </section>
+// Supabase Config
+const SUPABASE_URL = "https://iudtlababxabhlxstfry.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZHRsYWJhYnhhYmhseHN0ZnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3OTQwMzIsImV4cCI6MjA3NzM3MDAzMn0.ly_s5nLCXBvFM7DToOaAI9Ip0v4MGqxamTGqAxpDsko";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    <section id="gameHex" class="grow card hide" style="padding:16px">
-      <div class="toolbar" style="justify-content:space-between">
-        <div class="scorebox">
-          <div class="pill">分數<b id="hscore">0</b></div>
-          <div class="pill">等級<b id="hlevel">1</b></div>
-          <div class="pill">速度<b id="hspeed">1.0x</b></div>
-        </div>
-        <div class="toolbar">
-          <button onclick="hex.restart()" class="btn-accent">重新開始</button>
-        </div>
-      </div>
-      <div class="hex-wrap">
-        <canvas id="hextris" width="520" height="520"></canvas>
-        <div class="touch-left" ontouchstart="hex.turn(-1)" ontouchend="null"></div>
-        <div class="touch-right" ontouchstart="hex.turn(1)" ontouchend="null"></div>
-      </div>
-      <div class="muted small">操作：A/D 或 ←/→（手機點左右半邊）</div>
-    </section>
+const nowTS = ()=>new Date().toISOString();
+const PLANTS = ["南科","中科","龍潭","竹科","台中","其他"];
 
-    <section class="grow card" style="padding:16px;min-width:320px">
-      <h3 style="margin-top:0">排行榜（Supabase）</h3>
-      <div class="toolbar">
-        <select id="gameSelect">
-          <option value="2048">2048</option>
-          <option value="HEXTRIS">Hextris</option>
-        </select>
-        <input id="playerName" placeholder="玩家名稱（必填）" maxlength="20" />
-        <button class="btn-accent" onclick="submitScore()">上傳本局成績</button>
-        <button onclick="loadTop()">重新整理</button>
-      </div>
-      <div class="small muted" style="margin-top:6px">
-        安全修正：上傳會一併送出 <span class="mono">created_at</span>（ISO）避免 NOT NULL。
-      </div>
-      <div id="status" class="small" style="margin:8px 0"></div>
-      <table>
-        <thead><tr><th>#</th><th>玩家</th><th>遊戲</th><th>分數</th><th>步數/等級</th><th>時間</th></tr></thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </section>
-  </div>
+async function sbFetchLeaderboard(mode){
+  try{
+    const {data,error}=await supabase.from("scores")
+      .select("*")
+      .eq("mode",mode)
+      .order("score",{ascending:false})
+      .limit(100);
+    if(error)throw error;
+    return data||[];
+  }catch(e){console.warn("fetch fail",e);return [];}
+}
+async function sbSubmitScore(entry){
+  try{
+    const {created_at:_omit,...ins}=entry;
+    const {error}=await supabase.from("scores").insert([ins]);
+    if(error)throw error;
+    return {ok:true};
+  }catch(e){return {ok:false,error:e.message||String(e)};}
+}
 
-  <div class="card" style="padding:14px;margin-top:16px">
-    <div class="small muted">
-      版權聲明：本頁 2048 遊戲基於 Gabriele Cirulli 之 2048（MIT）修改；
-      Hextris-lite 為向 Hextris/hextris 開源專案致敬之自製簡化版，不含其原始素材與音效。
+/* ========== Game 2048 ========== */
+function Game2048({onFinish}){
+  const SIZE=4;
+  const [b,setB]=useState(Array(16).fill(0));
+  const [score,setScore]=useState(0);
+  const [moves,setMoves]=useState(0);
+  const [over,setOver]=useState(false);
+  const boardRef=useRef(null);
+
+  const idx=(r,c)=>r*SIZE+c;
+  const spawn=(bb)=>{
+    const e=bb.map((v,i)=>v===0?i:-1).filter(i=>i>=0);
+    if(!e.length)return bb;
+    const pos=e[Math.floor(Math.random()*e.length)];
+    const val=Math.random()<0.9?2:4;
+    const nb=[...bb];nb[pos]=val;return nb;
+  };
+  const slide=(arr)=>{
+    const n=arr.filter(v=>v!==0);const out=[];let gain=0;
+    for(let i=0;i<n.length;i++){
+      if(i<n.length-1&&n[i]===n[i+1]){out.push(n[i]*2);gain+=n[i]*2;i++;}
+      else out.push(n[i]);
+    }
+    while(out.length<SIZE)out.push(0);
+    return {row:out,gain};
+  };
+  const rotate=(bb)=>{const nb=Array(16).fill(0);
+    for(let r=0;r<4;r++)for(let c=0;c<4;c++)nb[idx(c,3-r)]=bb[idx(r,c)];
+    return nb;
+  };
+  const canMove=(bb)=>{
+    if(bb.some(v=>v===0))return true;
+    for(let r=0;r<4;r++)for(let c=0;c<4;c++){
+      const v=bb[idx(r,c)];
+      if(r+1<4&&bb[idx(r+1,c)]===v)return true;
+      if(c+1<4&&bb[idx(r,c+1)]===v)return true;
+    }
+    return false;
+  };
+  const moveLeft=(bb)=>{
+    let g=0;const nb=[...bb];
+    for(let r=0;r<4;r++){
+      const row=[0,1,2,3].map(c=>nb[idx(r,c)]);
+      const {row:s,gain}=slide(row);g+=gain;
+      for(let c=0;c<4;c++)nb[idx(r,c)]=s[c];
+    }
+    return {nb,g};
+  };
+  const move=(dir)=>{
+    if(over)return;
+    let bb=[...b];let rot=0;
+    if(dir==="ArrowUp")rot=1;if(dir==="ArrowRight")rot=2;if(dir==="ArrowDown")rot=3;
+    for(let i=0;i<rot;i++)bb=rotate(bb);
+    const {nb,g}=moveLeft(bb);let back=nb;
+    for(let i=0;i<(4-rot)%4;i++)back=rotate(back);
+    if(back.join(",")!==b.join(",")){
+      back=spawn(back);
+      setB(back);setScore(s=>s+g);setMoves(m=>m+1);
+      if(!canMove(back))setOver(true);
+    }
+  };
+  useEffect(()=>{
+    let bb=Array(16).fill(0);bb=spawn(spawn(bb));setB(bb);
+  },[]);
+  const onKey=e=>{
+    if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
+      e.preventDefault();move(e.key);
+    }
+  };
+  const submit=()=>onFinish({
+    mode:"2048",
+    modeLabel:"2048",
+    target:0,
+    elapsed:moves,
+    score,
+    created_at:nowTS()
+  });
+  return (
+    <div onKeyDown={onKey} tabIndex={0} ref={boardRef} className="outline-none select-none">
+      <div className="flex justify-between mb-2">
+        <div>分數：{score} 步數：{moves}</div>
+        <button onClick={submit} className="bg-blue-500 px-3 py-1 rounded text-sm">上傳分數</button>
+      </div>
+      <div className="grid grid-cols-4 gap-2 bg-neutral-800 p-3 rounded-2xl">
+        {b.map((v,i)=><div key={i} className={"aspect-square flex items-center justify-center rounded-xl font-bold text-2xl "+(v? "bg-yellow-300 text-black":"bg-neutral-900 text-neutral-700")}>{v||""}</div>)}
+      </div>
+      {over && <p className="text-center text-red-400 mt-2">遊戲結束</p>}
     </div>
-  </div>
-</div>
+  );
+}
 
-<script>
-/* ===================== 2048 (MIT-style, simplified) ===================== */
-const tween = (a,b,t)=>a+(b-a)*t;
-const COLORS = {
-  2:"#eee4da",4:"#ede0c8",8:"#f2b179",16:"#f59563",32:"#f67c5f",64:"#f65e3b",
-  128:"#edcf72",256:"#edcc61",512:"#edc850",1024:"#edc53f",2048:"#edc22e"
-};
-class Game2048{
-  constructor(size=4){this.size=size;this.best=+localStorage.getItem('best2048')||0;this.el=document.getElementById('board');this.el.style.setProperty('grid-template-columns',`repeat(${size},1fr)`);this.resetGrid();this.history=[];this.spawn();this.spawn();this.draw();this.attach(); }
-  resetGrid(){this.grid=[...Array(this.size)].map(()=>Array(this.size).fill(0));this.score=0;this.moves=0;}
-  restart(){this.resetGrid();this.history=[];this.spawn();this.spawn();this.draw();}
-  undo(){const s=this.history.pop();if(!s) return;Object.assign(this,JSON.parse(s));this.draw();}
-  save(){this.history.push(JSON.stringify({grid:this.grid,score:this.score,moves:this.moves})); if(this.history.length>50) this.history.shift();}
-  randEmpty(){const arr=[];for(let r=0;r<this.size;r++)for(let c=0;c<this.size;c++)if(!this.grid[r][c])arr.push([r,c]);return arr.length?arr[Math.floor(Math.random()*arr.length)]:null;}
-  spawn(){const e=this.randEmpty(); if(!e) return; const [r,c]=e; this.grid[r][c]=Math.random()<0.9?2:4;}
-  move(dir){ // 0 up,1 right,2 down,3 left
-    this.save();
-    let moved=false, merged=Array.from({length:this.size},()=>Array(this.size).fill(false));
-    const range = [...Array(this.size).keys()];
-    const rIt = (dir===0)?range:(dir===2)?range.slice().reverse():range;
-    const cIt = (dir===3)?range:(dir===1)?range.slice().reverse():range;
-    const dr = [ -1, 0, +1, 0 ][dir], dc = [ 0, +1, 0, -1 ][dir];
-    for(const r of rIt){
-      for(const c of cIt){
-        let v=this.grid[r][c]; if(!v) continue;
-        let nr=r,nc=c;
-        while(true){
-          const tr=nr+dr, tc=nc+dc;
-          if(tr<0||tc<0||tr>=this.size||tc>=this.size) break;
-          if(this.grid[tr][tc]===0){ nr=tr; nc=tc; moved=true; }
-          else if(this.grid[tr][tc]===v && !merged[tr][tc]){ nr=tr; nc=tc; moved=true; merged[nr][nc]=true; this.score+=v*2; break; }
-          else break;
-        }
-        if(nr!==r||nc!==c){
-          if(this.grid[nr][nc]===v) this.grid[nr][nc]*=2, this.grid[r][c]=0;
-          else this.grid[nr][nc]=v, this.grid[r][c]=0;
+/* ========== Hextris-lite ========== */
+function Hextris({onFinish}){
+  const ref=useRef();
+  const [score,setScore]=useState(0);
+  const [level,setLevel]=useState(1);
+  const [over,setOver]=useState(false);
+  useEffect(()=>{
+    const canvas=ref.current,ctx=canvas.getContext("2d");
+    let angle=0,stack=[[],[],[],[],[],[]],blocks=[],t=0,last=0,gameOver=false;
+    function drawHex(cx,cy,r,rot,col){
+      ctx.save();ctx.translate(cx,cy);ctx.rotate(rot);
+      ctx.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i;const x=r*Math.cos(a),y=r*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+      ctx.closePath();ctx.strokeStyle=col;ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    }
+    function sidePos(cx,cy,r,i,rot){const a=rot+i*Math.PI/3;return{x:cx+(r-10)*Math.cos(a),y:cy+(r-10)*Math.sin(a)};}
+    function spawn(){blocks.push({side:Math.floor(Math.random()*6),y:-30,color:`hsl(${Math.random()*360} 70% 60%)`});}
+    function update(dt){
+      if(gameOver)return;
+      t+=dt;if(t>700/Math.sqrt(level)){t=0;spawn();}
+      for(const b of blocks)b.y+=dt*0.15*level;
+      const newBlocks=[];for(const b of blocks){
+        if(b.y>=200){
+          stack[b.side].push(b.color);
+          setScore(s=>s+10*level);
+          if(stack[b.side].length>=10)gameOver=true;
+        }else newBlocks.push(b);
+      }
+      blocks=newBlocks;
+      let minH=Math.min(...stack.map(s=>s.length));
+      if(minH>0){for(const s of stack)s.shift();setScore(s=>s+100*level);setLevel(l=>l+1);}
+    }
+    function draw(){
+      const w=canvas.width,h=canvas.height,cx=w/2,cy=h/2;
+      ctx.clearRect(0,0,w,h);
+      drawHex(cx,cy,120,angle,"#334");
+      drawHex(cx,cy,160,angle,"#556");
+      for(let i=0;i<6;i++){
+        const c=sidePos(cx,cy,120,i,angle);
+        const st=stack[i];
+        for(let j=0;j<st.length;j++){
+          ctx.save();ctx.translate(c.x,c.y-j*10);ctx.rotate(angle+i*Math.PI/3);
+          ctx.fillStyle=st[j];ctx.fillRect(-10,-10,20,10);ctx.restore();
         }
       }
-    }
-    if(moved){ this.moves++; this.spawn(); this.draw(); if(this.isGameOver()) this.toast('遊戲結束'); }
-    else this.history.pop(); // revert save if nothing moved
-  }
-  isMovesLeft(){for(let r=0;r<this.size;r++)for(let c=0;c<this.size;c++)if(this.grid[r][c]===0)return true;return false;}
-  isGameOver(){ if(this.isMovesLeft())return false; for(let r=0;r<this.size;r++)for(let c=0;c<this.size;c++){const v=this.grid[r][c]; if((r+1<this.size&&this.grid[r+1][c]===v)||(c+1<this.size&&this.grid[r][c+1]===v)) return false;} return true; }
-  draw(){
-    const N=this.size, el=this.el; el.innerHTML='';
-    const tileSize = (el.clientWidth - 12*(N-1))/N;
-    // background cells
-    for(let r=0;r<N;r++) for(let c=0;c<N;c++){ const bg=document.createElement('div'); bg.className='cell'; el.appendChild(bg); }
-    // tiles
-    for(let r=0;r<N;r++) for(let c=0;c<N;c++){ const v=this.grid[r][c]; if(!v) continue;
-      const t=document.createElement('div'); t.className='tile'; t.textContent=v;
-      t.style.width=t.style.height=tileSize+'px';
-      t.style.left=(c*(tileSize+12)+12)+'px'; t.style.top=(r*(tileSize+12)+12)+'px';
-      const col=COLORS[v]||'#cdc1b4'; const fg=v<=4?'#776e65':'#fff';
-      t.style.background=col; t.style.color=fg; t.style.fontSize=(v>=1024?26:v>=128?30:v>=16?34:38)+'px';
-      el.appendChild(t);
-    }
-    document.getElementById('score').textContent=this.score;
-    document.getElementById('moves').textContent=this.moves;
-    if(this.score>this.best){ this.best=this.score; localStorage.setItem('best2048',this.best); }
-    document.getElementById('best').textContent=this.best;
-  }
-  attach(){
-    let startX=null,startY=null;
-    window.addEventListener('keydown',e=>{
-      const k=e.key; if(['ArrowUp','ArrowRight','ArrowDown','ArrowLeft','w','d','s','a'].includes(k)) e.preventDefault();
-      if(k==='ArrowUp'||k==='w') this.move(0);
-      if(k==='ArrowRight'||k==='d') this.move(1);
-      if(k==='ArrowDown'||k==='s') this.move(2);
-      if(k==='ArrowLeft'||k==='a') this.move(3);
-    });
-    const b=this.el; b.addEventListener('touchstart',e=>{const t=e.changedTouches[0];startX=t.clientX;startY=t.clientY;},{passive:true});
-    b.addEventListener('touchend',e=>{
-      const t=e.changedTouches[0]; const dx=t.clientX-startX, dy=t.clientY-startY;
-      if(Math.abs(dx)>Math.abs(dy)){ if(dx>30)this.move(1); else if(dx<-30)this.move(3); }
-      else{ if(dy>30)this.move(2); else if(dy<-30)this.move(0); }
-    },{passive:true});
-  }
-  toast(msg){console.log(msg);}
-}
-const g=new Game2048();
-
-/* ===================== Hextris-lite (canvas) ===================== */
-const hex = (function(){
-  const canvas=document.getElementById('hextris'), ctx=canvas.getContext('2d');
-  let state;
-  function reset(){
-    state = {
-      angle:0, speed:1, level:1, score:0, over:false,
-      blocks:[], // {side:0..5, y:float, color}
-      stack:[[],[],[],[],[],[]], // per side heights
-      lastSpawn:0
-    };
-    drawHUD();
-  }
-  function spawn(){
-    const side = Math.floor(Math.random()*6);
-    state.blocks.push({side, y:-40, color:`hsl(${Math.floor(Math.random()*360)} 70% 60%)`});
-  }
-  function update(dt){
-    if(state.over) return;
-    state.lastSpawn+=dt;
-    if(state.lastSpawn>800/Math.sqrt(state.level)){ state.lastSpawn=0; spawn(); }
-    const g=0.2*state.level;
-    for(const b of state.blocks){ b.y += (120+state.level*30) * dt/16; }
-    // collision to center ring (radius ~ 120)
-    const targetY = canvas.height/2 - 10;
-    const remain=[];
-    for(const b of state.blocks){
-      if(b.y >= targetY){
-        // land on side; if height >= 10 -> game over
-        const h = state.stack[b.side].length;
-        state.stack[b.side].push(b.color);
-        state.score += 10 + state.level;
-        if(state.stack[b.side].length>=10) state.over=true;
-      }else remain.push(b);
-    }
-    state.blocks=remain;
-    // clear if 6 sides same height row filled
-    let minH = Math.min(...state.stack.map(s=>s.length));
-    if(minH>0){
-      // remove one layer
-      for(const s of state.stack) s.shift();
-      state.score += 100*state.level;
-      state.level += (state.score%300===0)?1:0;
-      state.speed = 1 + (state.level-1)*0.1;
-    }
-    draw();
-    document.getElementById('hscore').textContent=state.score;
-    document.getElementById('hlevel').textContent=state.level;
-    document.getElementById('hspeed').textContent=state.speed.toFixed(1)+'x';
-  }
-  function drawHex(cx,cy,r,rot,col,fill=false){
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(rot);
-    ctx.beginPath();
-    for(let i=0;i<6;i++){ const a=Math.PI/3*i; const x=r*Math.cos(a), y=r*Math.sin(a); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
-    ctx.closePath(); ctx.strokeStyle=col; ctx.lineWidth=2; fill?ctx.fill():ctx.stroke(); ctx.restore();
-  }
-  function sideCenter(cx,cy,r,idx,rot){
-    const a = rot + idx*Math.PI/3;
-    return {x:cx + (r-14)*Math.cos(a), y:cy + (r-14)*Math.sin(a)};
-  }
-  function draw(){
-    const w=canvas.width, h=canvas.height, cx=w/2, cy=h/2;
-    ctx.clearRect(0,0,w,h);
-    // background grid
-    drawHex(cx,cy,160,state.angle,'#233');
-    drawHex(cx,cy,120,state.angle,'#466');
-    // stacks
-    for(let i=0;i<6;i++){
-      const c=sideCenter(cx,cy,120,i,state.angle);
-      const stack = state.stack[i];
-      for(let j=0;j<stack.length;j++){
-        ctx.save(); ctx.translate(c.x,c.y);
-        ctx.rotate(state.angle + i*Math.PI/3);
-        ctx.fillStyle=stack[j]; ctx.strokeStyle="#000"; ctx.lineWidth=1.5;
-        ctx.fillRect(-12, -j*16-14, 24, 14); ctx.strokeRect(-12, -j*16-14, 24, 14);
-        ctx.restore();
+      for(const b of blocks){
+        const c=sidePos(cx,cy,160,b.side,angle);
+        ctx.save();ctx.translate(c.x,c.y-b.y);ctx.rotate(angle+b.side*Math.PI/3);
+        ctx.fillStyle=b.color;ctx.fillRect(-10,-10,20,10);ctx.restore();
+      }
+      if(gameOver){ctx.fillStyle="rgba(0,0,0,.6)";ctx.fillRect(0,0,w,h);
+        ctx.fillStyle="#fff";ctx.font="24px sans-serif";ctx.textAlign="center";
+        ctx.fillText("遊戲結束",cx,cy);
       }
     }
-    // falling blocks
-    for(const b of state.blocks){
-      const c=sideCenter(cx,cy,160,b.side,state.angle);
-      ctx.save(); ctx.translate(c.x,c.y - (160- b.y));
-      ctx.rotate(state.angle + b.side*Math.PI/3);
-      ctx.fillStyle=b.color; ctx.strokeStyle="#000"; ctx.lineWidth=1.5;
-      ctx.fillRect(-12,-12,24,12); ctx.strokeRect(-12,-12,24,12);
-      ctx.restore();
-    }
-    if(state.over){
-      ctx.fillStyle="rgba(0,0,0,.45)"; ctx.fillRect(0,0,w,h);
-      ctx.fillStyle="#fff"; ctx.font="28px ui-sans-serif"; ctx.textAlign="center";
-      ctx.fillText("遊戲結束",cx,cy-6);
-      ctx.font="14px ui-sans-serif"; ctx.fillText("按重新開始繼續",cx,cy+18);
-    }
-  }
-  let last=0, raf;
-  function loop(ts){ if(!last) last=ts; const dt=ts-last; last=ts; update(dt); raf=requestAnimationFrame(loop); }
-  function start(){ cancelAnimationFrame(raf); last=0; raf=requestAnimationFrame(loop); }
-  function turn(dir){ state.angle += dir*0.15; }
-  window.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft'||e.key==='a') turn(-1); if(e.key==='ArrowRight'||e.key==='d') turn(1); });
-  reset(); start();
-  function restart(){ reset(); start(); }
-  function getScore(){ return state.score; }
-  return {restart, turn, getScore};
-})();
-function switchTab(id){
-  document.getElementById('game2048').classList.toggle('hide', id!=='game2048');
-  document.getElementById('gameHex').classList.toggle('hide', id!=='gameHex');
-  document.getElementById('tab-2048').classList.toggle('active', id==='game2048');
-  document.getElementById('tab-hex').classList.toggle('active', id==='gameHex');
+    function loop(ts){const dt=ts-last;last=ts;update(dt);draw();if(!gameOver)requestAnimationFrame(loop);}
+    requestAnimationFrame(loop);
+    function turn(d){angle+=d*0.2;}
+    const key=e=>{if(e.key==="ArrowLeft"||e.key==="a")turn(-1);if(e.key==="ArrowRight"||e.key==="d")turn(1);};
+    window.addEventListener("keydown",key);
+    return()=>{window.removeEventListener("keydown",key);}
+  },[]);
+  const submit=()=>onFinish({mode:"HEXTRIS",modeLabel:"六角堆疊挑戰",target:0,elapsed:level,score,created_at:nowTS()});
+  return (
+    <div>
+      <div className="flex justify-between mb-2">
+        <div>分數：{score} 等級：{level}</div>
+        <button onClick={submit} className="bg-blue-500 px-3 py-1 rounded text-sm">上傳分數</button>
+      </div>
+      <canvas ref={ref} width="300" height="300" className="bg-neutral-900 rounded-2xl mx-auto"></canvas>
+    </div>
+  );
 }
 
-/* ===================== Supabase Leaderboard (safe created_at) ===================== */
-const SUPABASE_URL = window.SUPABASE_URL || "";   // ← 填入你的 URL
-const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || ""; // ← 填入你的 anon key
-let supabaseClient=null;
-// lazy init
-function sb(){ if(!SUPABASE_URL||!SUPABASE_ANON_KEY){ log('未設定 Supabase，僅本地遊玩'); return null; }
-  if(supabaseClient) return supabaseClient;
-  // 內嵌最小 SDK（僅 insert/select fetch）
-  supabaseClient = {
-    async insertScore(row){
-      const res = await fetch(SUPABASE_URL+"/rest/v1/scores",{
-        method:"POST",
-        headers:{ "apikey":SUPABASE_ANON_KEY, "Authorization":"Bearer "+SUPABASE_ANON_KEY, "Content-Type":"application/json", "Prefer":"return=representation" },
-        body: JSON.stringify([row])
-      });
-      if(!res.ok){ throw new Error(await res.text()); }
-      return res.json();
-    },
-    async selectTop(){
-      const url = new URL(SUPABASE_URL+"/rest/v1/scores");
-      url.searchParams.set("select","id,player,game,score,moves,level,created_at");
-      url.searchParams.set("order","score.desc");
-      url.searchParams.append("limit","20");
-      const res = await fetch(url, { headers:{ "apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY }});
-      if(!res.ok){ throw new Error(await res.text()); }
-      return res.json();
-    }
+/* ========== Leaderboard ========== */
+function Leaderboard({data,title}){
+  return (
+    <div className="mt-4">
+      <h3 className="font-bold mb-2">{title}</h3>
+      <table className="w-full text-sm">
+        <thead><tr className="text-slate-400 text-xs"><th className="text-left p-1">#</th><th className="text-left p-1">暱稱</th><th className="text-left p-1">廠區</th><th className="text-left p-1">分數</th><th className="text-left p-1">步數/等級</th><th className="text-left p-1">時間</th></tr></thead>
+        <tbody>
+          {data.map((r,i)=><tr key={r.id} className={i%2?"bg-neutral-900":"bg-neutral-800"}>
+            <td className="p-1">{i+1}</td>
+            <td className="p-1">{r.name}</td>
+            <td className="p-1">{r.plant}</td>
+            <td className="p-1 text-yellow-300">{r.score}</td>
+            <td className="p-1">{r.elapsed}</td>
+            <td className="p-1 text-xs text-slate-400">{new Date(r.created_at).toLocaleString()}</td>
+          </tr>)}
+          {data.length===0&&<tr><td colSpan="6" className="text-center text-slate-500 p-2">尚無資料</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ========== Main App ========== */
+function App(){
+  const [mode,setMode]=useState("2048");
+  const [name,setName]=useState("");
+  const [plant,setPlant]=useState(PLANTS[0]);
+  const [dept,setDept]=useState("");
+  const [lb2048,setLb2048]=useState([]);
+  const [lbHex,setLbHex]=useState([]);
+  const refresh=async()=>{
+    setLb2048(await sbFetchLeaderboard("2048"));
+    setLbHex(await sbFetchLeaderboard("HEXTRIS"));
   };
-  return supabaseClient;
-}
-function currentGame(){
-  const is2048 = !document.getElementById('game2048').classList.contains('hide');
-  return is2048?'2048':'HEXTRIS';
-}
-function getCurrentScore(){
-  return currentGame()==='2048' ? g.score : hex.getScore();
-}
-function getMovesOrLevel(){
-  return currentGame()==='2048' ? g.moves : undefined;
-}
-async function submitScore(){
-  const player=document.getElementById('playerName').value.trim();
-  const chose=document.getElementById('gameSelect').value;
-  const game = chose; // 依下拉決定上傳哪款
-  if(!player){ return log('請輸入玩家名稱'); }
-  const row = {
-    player, game,
-    score: game==='2048'? g.score : hex.getScore(),
-    moves: game==='2048'? g.moves : null,
-    level: game==='HEXTRIS'? 0 : null,
-    created_at: new Date().toISOString()
+  useEffect(()=>{
+    refresh();
+    const ch=supabase.channel("scores").on("postgres_changes",{event:"*",schema:"public",table:"scores"},refresh).subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[]);
+  const submitScore=async(e)=>{
+    if(!name.trim()){alert("請輸入暱稱");return;}
+    const entry={id:crypto.randomUUID(),name,plant,dept,...e};
+    const {ok,error}=await sbSubmitScore(entry);
+    if(ok){alert("上傳成功");refresh();}else alert("上傳失敗："+error);
   };
-  const cli=sb(); if(!cli) return log('未設定 Supabase，不上傳（可在本機測試遊戲）');
-  try{
-    await cli.insertScore(row);
-    log('上傳成功 ✅'); loadTop();
-  }catch(e){ log('上傳失敗：'+e.message, true); }
+  return (
+    <div className="max-w-6xl mx-auto p-4">
+      <h1 className="text-xl font-bold mb-3">Engineer Week｜2048 + 六角堆疊挑戰</h1>
+      <div className="flex flex-wrap gap-3 mb-4">
+        <button onClick={()=>setMode("2048")} className={"px-3 py-2 rounded "+(mode==="2048"?"bg-yellow-400 text-black":"bg-neutral-800")}>2048</button>
+        <button onClick={()=>setMode("HEXTRIS")} className={"px-3 py-2 rounded "+(mode==="HEXTRIS"?"bg-yellow-400 text-black":"bg-neutral-800")}>六角堆疊挑戰</button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="border border-white/10 p-4 rounded-2xl bg-black/40">
+          {mode==="2048"?<Game2048 onFinish={submitScore}/>:<Hextris onFinish={submitScore}/>}
+        </div>
+
+        <div className="space-y-3">
+          <div className="border border-white/10 p-4 rounded-2xl bg-black/40">
+            <h2 className="font-bold mb-2">👤 參賽者資訊</h2>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="暱稱" className="w-full mb-2 bg-neutral-900 rounded p-2"/>
+            <select value={plant} onChange={e=>setPlant(e.target.value)} className="w-full mb-2 bg-neutral-900 rounded p-2">{PLANTS.map(p=><option key={p}>{p}</option>)}</select>
+            <input value={dept} onChange={e=>setDept(e.target.value)} placeholder="部門（選填）" className="w-full bg-neutral-900 rounded p-2"/>
+          </div>
+          <div className="border border-white/10 p-4 rounded-2xl bg-black/40">
+            <Leaderboard data={lb2048} title="🏆 2048 排行榜"/>
+            <Leaderboard data={lbHex} title="🏆 六角堆疊挑戰 排行榜"/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
-async function loadTop(){
-  const cli=sb(); if(!cli){ document.getElementById('tbody').innerHTML=''; return; }
-  try{
-    const rows=await cli.selectTop();
-    const tb=document.getElementById('tbody'); tb.innerHTML='';
-    rows.forEach((r,i)=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${i+1}</td><td>${escapeHtml(r.player)}</td><td><span class="badge">${r.game}</span></td><td>${r.score}</td><td>${r.moves??''}</td><td class="small mono">${new Date(r.created_at).toLocaleString()}</td>`;
-      tb.appendChild(tr);
-    });
-  }catch(e){ log('讀取排行榜失敗：'+e.message,true); }
-}
-function log(msg,isErr=false){
-  const el=document.getElementById('status'); el.textContent=msg; el.style.color=isErr?'#ffd2d2':'#9fbbe5';
-}
-function escapeHtml(s){ return s?.replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])) || ""; }
-window.addEventListener('load',()=>setTimeout(loadTop,200));
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>

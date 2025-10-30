@@ -83,8 +83,8 @@
       async function sbSubmitScore(entry) {
       try {
         const modeMap = { easy: "入門 1,000ms", pro: "高手 750ms", insane: "狂熱 500ms", "2048": "2048" };
-        const label = modeMap[entry.mode] || entry.mode;
-        // 針對你的資料表目前為 NOT NULL 的 modelabel 欄位，明確提供值
+        const label = modeMap[entry.mode] || entry.mode || "";
+        // 構成實際插入 payload（確保包含 NOT NULL 的 modelabel）
         const insertable = {
           id: entry.id,
           name: entry.name,
@@ -94,9 +94,11 @@
           target: entry.target,
           elapsed: entry.elapsed,
           score: entry.score,
-          modelabel: label, // 注意：小寫，符合錯誤訊息中的實際欄位名
+          modelabel: label, // 注意：小寫欄位名
           created_at: entry.created_at,
         };
+        if (!insertable.modelabel) insertable.modelabel = String(entry.mode || "");
+        console.debug("[Supabase] inserting payload:", insertable);
         const { data, error } = await supabase.from("scores").insert([insertable]).select();
         if (error) throw error;
         console.log("[Supabase] insert ok", data);

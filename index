@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Engineer Week｜線上挑戰（免登入／手機可玩／即時排行榜）</title>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React UMD + ReactDOM UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel 轉譯 JSX（只在開發/展示用；正式可用 Vite/Next 打包） -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Supabase JS UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    html,body { background: #000; }
+  </style>
+</head>
+<body class="bg-black text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+
+    // ========= Supabase Cloud Config（使用你的專案參數） =========
+    const SUPABASE_URL = "https://iudtlababxabhlxstfry.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1ZHRsYWJhYnhhYmhseHN0ZnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3OTQwMzIsImV4cCI6MjA3NzM3MDAzMn0.ly_s5nLCXBvFM7DToOaAI9Ip0v4MGqxamTGqAxpDsko";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (typeof window !== "undefined") window.supabaseClient = supabase; // 方便在 Console 除錯
+
+    // ========= Utils =========
+    const nowTS = () => new Date().toISOString();
+    const PLANTS = ["南科", "中科", "龍潭", "竹科", "台中", "其他"];
+
+    // ========= Supabase helpers =========
+    async function sbFetchLeaderboard() {
+      try {
+        const { data, error } = await supabase
+          .from("scores")
+          .select("*")
+          .order("score", { ascending: false })
+          .limit(500);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.warn("[Supabase] fetch leaderboard failed", e);
+        return null;
+      }
+    }
+
+    async function sbSubmitScore(entry) {
+      try {
+        // DB 用 DEFAULT now() 產生 created_at
+        const { created_at: _omit, ...insertable } = entry;
+        const { data, error } = await supabase.from("scores").insert([insertable]).select();
+        if (error) throw error;
+        console.log("[Supabase] insert ok", data);
+        return { ok: true };
+      } catch (e) {
+        console.warn("[Supabase] submit failed", e);
+        return { ok: false, error: e?.message || String(e) };
+      }
+    }
+
+    // ========= Reaction 計時挑戰 =========
+    function ReactionGame({ onScore }) {
+      const MODES = [
+        { id: "easy", label: "入門 1,000ms", target: 1000 },
+        { id: "pro", label: "高手 750ms", target: 750 },
+        { id: "insane", label: "狂熱 500ms", target: 500 },
+      ];
+
+      const [mode, setMode] = useState(MODES[0]);
+      const [running, setRunning] = useState(false);
+      const [startTs, setStartTs] = useState(null);
+      const [elapsed, setElapsed] = useState(0);
+      const rafRef = useRef(null);
+
+      const pretty = (ms) => `${Math.round(ms)} ms`;
+      const diff = Math.abs(elapsed - mode.target);
+      const score = Math.max(0, 1000 - Math.round(diff));
+
+      const anim = () => {
+        if (!running || !startTs) return;
+        const e = performance.now() - startTs;
+        setElapsed(e);
+        rafRef.current = requestAnimationFrame(anim);
+      };
+
+      useEffect(() => () => rafRef.current && cancelAnimationFrame(rafRef.current), []);
+
+      const start = () => {
+        setElapsed(0);
+        setRunning(true);
+        const t = performance.now();
+        setStartTs(t);
+        rafRef.current = requestAnimationFrame(anim);
+      };
+      const stop = () => {
+        setRunning(false);
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        setStartTs(null); // 凍結顯示
+      };
+      const share = () => {
+        stop();
+        onScore({ mode: mode.id, target: mode.target, elapsed: Math.round(elapsed), score, created_at: nowTS() });
+      };
+
+      return (
+        <div className="w-full" role="group" aria-label="Reaction Game">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                className={"w-full rounded-2xl px-4 py-2 text-sm sm:text-base shadow " + (mode.id === m.id ? "bg-yellow-400/90 text-black" : "bg-neutral-800 text-white")}
+                onClick={() => setMode(m)}
+                disabled={running}
+                aria-pressed={mode.id === m.id}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-black p-6 shadow-xl">
+            <div className="text-center">
+              <p className="text-xs uppercase tracking-widest text-slate-400">目標時間</p>
+              <p className="text-2xl font-bold text-yellow-300">{pretty(mode.target)}</p>
+            </div>
+
+            <div className="mt-6 flex items-center justify-center">
+              <div className="flex size-56 items-center justify-center rounded-full border-[10px] border-yellow-400/40 bg-slate-900/60 text-4xl font-extrabold text-white sm:size-64" aria-live="polite">
+                {pretty(elapsed)}
+              </div>
+            </div>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              {running ? "計時中…" : startTs === null ? "已停止，時間已凍結" : "就緒"}
+            </p>
+
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <button className="rounded-2xl bg-neutral-800 px-4 py-3 text-white shadow md:text-base" onClick={() => { setElapsed(0); setRunning(false); }} disabled={running}>重置</button>
+              {!running ? (
+                <button className="rounded-2xl bg-yellow-400 px-4 py-3 font-semibold text-black shadow md:text-base" onClick={start}>開始</button>
+              ) : (
+                <button className="animate-pulse rounded-2xl bg-emerald-400 px-4 py-3 font-semibold text-black shadow md:text-base" onClick={stop}>停止</button>
+              )}
+              <button className="rounded-2xl bg-blue-500 px-4 py-3 font-semibold text-white shadow md:text-base" onClick={share} disabled={running || score <= 0} title={score <= 0 ? "先完成一局再上傳成績" : "上傳這局分數"}>上傳成績（{score}）</button>
+            </div>
+            <p className="mt-3 text-center text-xs text-slate-400">分數＝1000 − |實際時間 − 目標時間|（越接近越高）</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ========= 2048 =========
+    function Game2048({ onScore }) {
+      const SIZE = 4;
+      const [board, setBoard] = useState(Array(16).fill(0));
+      const [score, setScore] = useState(0);
+      const [moves, setMoves] = useState(0);
+      const [over, setOver] = useState(false);
+      const boardRef = useRef(null);
+
+      const idx = (r, c) => r * SIZE + c;
+      const spawn = (b) => {
+        const empties = b.map((v, i) => (v === 0 ? i : -1)).filter((i) => i >= 0);
+        if (!empties.length) return b;
+        const pos = empties[Math.floor(Math.random() * empties.length)];
+        const val = Math.random() < 0.9 ? 2 : 4;
+        const nb = [...b];
+        nb[pos] = val;
+        return nb;
+      };
+
+      const reset = () => {
+        let b = Array(16).fill(0);
+        b = spawn(spawn(b));
+        setBoard(b);
+        setScore(0);
+        setMoves(0);
+        setOver(false);
+        setTimeout(() => boardRef.current?.focus(), 0);
+      };
+
+      useEffect(() => { reset(); }, []);
+
+      const slide = (arr) => {
+        const nums = arr.filter((v) => v !== 0);
+        const out = [];
+        let gained = 0;
+        for (let i = 0; i < nums.length; i++) {
+          if (i < nums.length - 1 && nums[i] === nums[i + 1]) {
+            const v = nums[i] * 2;
+            out.push(v);
+            gained += v;
+            i++;
+          } else out.push(nums[i]);
+        }
+        while (out.length < SIZE) out.push(0);
+        return { row: out, gained };
+      };
+
+      const rotate = (b) => {
+        const nb = Array(16).fill(0);
+        for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) nb[idx(c, SIZE - 1 - r)] = b[idx(r, c)];
+        return nb;
+      };
+
+      const canMove = (b) => {
+        if (b.some((v) => v === 0)) return true;
+        for (let r = 0; r < SIZE; r++) {
+          for (let c = 0; c < SIZE; c++) {
+            const v = b[idx(r, c)];
+            if (r + 1 < SIZE && b[idx(r + 1, c)] === v) return true;
+            if (c + 1 < SIZE && b[idx(r, c + 1)] === v) return true;
+          }
+        }
+        return false;
+      };
+
+      const moveLeft = (b) => {
+        let gainedTotal = 0;
+        const nb = [...b];
+        for (let r = 0; r < SIZE; r++) {
+          const row = [0, 1, 2, 3].map((c) => nb[idx(r, c)]);
+          const { row: srow, gained } = slide(row);
+          gainedTotal += gained;
+          for (let c = 0; c < SIZE; c++) nb[idx(r, c)] = srow[c];
+        }
+        return { nb, gainedTotal };
+      };
+
+      const move = (dir) => {
+        if (over) return;
+        let b = [...board];
+        let rotated = 0;
+        if (dir === "ArrowUp") rotated = 1;
+        if (dir === "ArrowRight") rotated = 2;
+        if (dir === "ArrowDown") rotated = 3;
+        for (let i = 0; i < rotated; i++) b = rotate(b);
+
+        const { nb, gainedTotal } = moveLeft(b);
+        let back = nb;
+        for (let i = 0; i < (4 - rotated) % 4; i++) back = rotate(back);
+
+        if (back.join(",") !== board.join(",")) {
+          back = spawn(back);
+          setBoard(back);
+          setScore((s) => s + gainedTotal);
+          setMoves((m) => m + 1);
+          if (!canMove(back)) setOver(true);
+        }
+      };
+
+      // touch & keyboard
+      const touch = useRef(null);
+      const onTouchStart = (e) => {
+        const t = e.changedTouches[0];
+        touch.current = { x: t.clientX, y: t.clientY };
+      };
+      const onTouchEnd = (e) => {
+        if (!touch.current) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touch.current.x;
+        const dy = t.clientY - touch.current.y;
+        const ax = Math.abs(dx), ay = Math.abs(dy);
+        if (Math.max(ax, ay) < 20) return;
+        if (ax > ay) move(dx > 0 ? "ArrowRight" : "ArrowLeft");
+        else move(dy > 0 ? "ArrowDown" : "ArrowUp");
+        touch.current = null;
+      };
+      const onKeyDown = (e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+          e.preventDefault();
+          move(e.key);
+        }
+      };
+
+      const submit = () => onScore({ type: "2048", mode: "2048", score, moves, created_at: nowTS() });
+
+      return (
+        <div className="w-full select-none" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl border border-white/10 px-3 py-1 text-xs text-slate-300">
+                分數：<span className="font-bold text-yellow-300">{score}</span>
+              </div>
+              <div className="rounded-xl border border-white/10 px-3 py-1 text-xs text-slate-300">步數：{moves}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="rounded-xl bg-neutral-800 px-3 py-2 text-xs text-white" onClick={reset}>重新開始</button>
+              <button className="rounded-xl bg-blue-500 px-3 py-2 text-xs font-semibold text-white" onClick={submit} disabled={score <= 0}>上傳分數</button>
+            </div>
+          </div>
+
+          <div
+            ref={boardRef}
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            className="grid grid-cols-4 gap-2 rounded-3xl bg-neutral-900 p-3 shadow-inner outline-none focus:ring-2 focus:ring-yellow-400/40"
+            aria-label="2048 棋盤（可用方向鍵操作）"
+          >
+            {board.map((v, i) => (
+              <div key={i} className={"aspect-square rounded-2xl flex items-center justify-center text-2xl font-extrabold shadow " + (v === 0 ? "bg-neutral-800 text-neutral-600" : "bg-yellow-400/90 text-black")}>
+                {v === 0 ? "" : v}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:w-2/3">
+            <div />
+            <button className="rounded-2xl bg-neutral-800 px-3 py-2 text-white" onClick={() => move("ArrowUp")} aria-label="向上">⬆️</button>
+            <div />
+            <button className="rounded-2xl bg-neutral-800 px-3 py-2 text-white" onClick={() => move("ArrowLeft")} aria-label="向左">⬅️</button>
+            <div />
+            <button className="rounded-2xl bg-neutral-800 px-3 py-2 text-white" onClick={() => move("ArrowRight")} aria-label="向右">➡️</button>
+            <div />
+            <button className="rounded-2xl bg-neutral-800 px-3 py-2 text-white" onClick={() => move("ArrowDown")} aria-label="向下">⬇️</button>
+            <div />
+          </div>
+
+          {over && <p className="mt-3 text-center text-sm text-red-300">沒有可移動步數囉！你可以按「重新開始」或「上傳分數」。</p>}
+        </div>
+      );
+    }
+
+    // ========= Leaderboard =========
+    function Leaderboard({ data, highlight }) {
+      const [q, setQ] = useState("");
+      const filtered = useMemo(() => {
+        return data
+          .filter((d) => [d.name, d.plant, d.dept].join(" ").toLowerCase().includes(q.toLowerCase()))
+          .slice(0, 100);
+      }, [data, q]);
+
+      return (
+        <div className="w-full">
+          <div className="mb-2 flex items-center gap-2">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜尋姓名 / 廠區 / 部門"
+              className="w-full rounded-2xl bg-neutral-900 px-4 py-3 text-sm text-white placeholder:text-slate-500"
+            />
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-neutral-800">
+            <table className="min-w-full divide-y divide-neutral-800">
+              <thead className="bg-neutral-900/80">
+                <tr>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">名次</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">暱稱</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">廠區</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">部門</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">模式</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">分數</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">步數/誤差</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">成績</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-400">時間</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800 bg-black/40">
+                {filtered.map((d, i) => (
+                  <tr key={d.id} className={(highlight && d.id === highlight ? "bg-yellow-400/10" : (i % 2 ? "bg-black" : "bg-black/60"))}>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">{i + 1}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-white">{d.name}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">{d.plant}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">{d.dept || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">{d.modeLabel}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm font-bold text-yellow-300">{d.score}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">
+                      {d.mode === "2048" ? `${d.elapsed} 步` : `±${Math.abs(d.elapsed - d.target)} ms`}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-300">{d.mode === "2048" ? `${d.elapsed} 步` : `${d.elapsed} ms（目標 ${d.target}）`}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-400">{new Date(d.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-400">尚無資料或無符合搜尋結果</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ========= Main =========
+    function App() {
+      const [leaderboard, setLeaderboard] = useState([]);
+      const [lastId, setLastId] = useState(undefined);
+      const [name, setName] = useState("");
+      const [plant, setPlant] = useState(PLANTS[0]);
+      const [dept, setDept] = useState("");
+      const [gameType, setGameType] = useState("2048");
+      const [serverStatus, setServerStatus] = useState("offline"); // connected | offline | error
+
+      useEffect(() => {
+        (async () => {
+          const cloud = await sbFetchLeaderboard();
+          if (cloud) {
+            setLeaderboard(cloud);
+            setServerStatus("connected");
+          }
+        })();
+      }, []);
+
+      useEffect(() => {
+        const t = setInterval(async () => {
+          const cloud = await sbFetchLeaderboard();
+          if (cloud) {
+            setLeaderboard(cloud);
+            setServerStatus("connected");
+          } else {
+            setServerStatus((s) => (s === "connected" ? "error" : s));
+          }
+        }, 10000);
+
+        const channel = supabase
+          .channel("scores-realtime")
+          .on("postgres_changes", { event: "*", schema: "public", table: "scores" }, async () => {
+            const cloud = await sbFetchLeaderboard();
+            if (cloud) {
+              setLeaderboard(cloud);
+              setServerStatus("connected");
+            }
+          })
+          .subscribe();
+
+        return () => {
+          clearInterval(t);
+          supabase.removeChannel(channel);
+        };
+      }, []);
+
+      const sorted = useMemo(() => [...leaderboard].sort((a, b) => b.score - a.score), [leaderboard]);
+
+      const handleIncomingScore = async (game) => {
+        const modeMap = { easy: "入門 1,000ms", pro: "高手 750ms", insane: "狂熱 500ms", "2048": "2048" };
+
+        if (!name.trim()) {
+          alert("請先在右側填寫『暱稱』再上傳成績。");
+          return;
+        }
+
+        let target = 0, elapsed = 0, score = 0;
+        let mode = String(game.mode || game.type || "easy");
+
+        if (mode === "2048") {
+          score = Math.max(0, Math.min(500000, Number(game.score || 0)));
+          elapsed = Math.max(0, Math.min(10000, Number(game.moves || 0)));
+          target = 0;
+        } else {
+          elapsed = Math.max(0, Math.min(10000, Number(game.elapsed || 0)));
+          target = Math.max(100, Math.min(5000, Number(game.target || 1000)));
+          score = Math.max(0, Math.min(1000, Number(game.score || 0)));
+        }
+
+        const id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : "id_" + Math.random().toString(36).slice(2);
+        const entry = {
+          id, name: name.trim(), plant, dept: dept.trim(),
+          mode, modeLabel: modeMap[mode] || mode, target, elapsed, score,
+          created_at: nowTS(),
+        };
+
+        setLeaderboard((prev) => [entry, ...prev].slice(0, 500));
+        setLastId(entry.id);
+
+        const { ok, error } = await sbSubmitScore(entry);
+        const cloud = await sbFetchLeaderboard();
+        if (cloud && cloud.length > 0) {
+          setLeaderboard(cloud);
+          setServerStatus("connected");
+        } else {
+          setServerStatus(ok ? "connected" : "error");
+          if (!ok && error) alert("上傳失敗：" + error + "\n請稍後再試或聯繫管理員。");
+        }
+
+        setTimeout(() => document.getElementById("lb_section")?.scrollIntoView({ behavior: "smooth" }), 150);
+      };
+
+      const resetAll = () => {
+        if (confirm("確定要清除本機的個人資訊嗎？（雲端資料不會被刪除）")) {
+          setName(""); setDept(""); setPlant(PLANTS[0]);
+        }
+      };
+
+      return (
+        <div className="min-h-screen w-full bg-gradient-to-b from-black via-slate-950 to-black text-white">
+          {/* Header */}
+          <header className="sticky top-0 z-10 border-b border-white/10 bg-black/60 backdrop-blur">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-yellow-400" />
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-slate-400">Engineer Week Demo</p>
+                  <h1 className="text-lg font-bold">光電挑戰｜2048 / Reaction</h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={
+                    "hidden rounded-full px-3 py-1 text-xs md:inline " +
+                    (serverStatus === "connected"
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : serverStatus === "error"
+                      ? "bg-red-500/20 text-red-300"
+                      : "bg-slate-500/20 text-slate-300")
+                  }
+                  title={
+                    serverStatus === "connected"
+                      ? "已接上雲端排行榜（Supabase）"
+                      : serverStatus === "error"
+                      ? "雲端回應異常，暫用本機資料"
+                      : "未設定雲端，使用本機資料"
+                  }
+                >
+                  {serverStatus === "connected" ? "Cloud: Connected" : serverStatus === "error" ? "Cloud: Error" : "Cloud: Local Only"}
+                </span>
+                <button onClick={resetAll} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5">清除本機資料</button>
+              </div>
+            </div>
+          </header>
+
+          {/* Main */}
+          <main className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 px-4 py-6 md:grid-cols-5">
+            {/* Left: Game */}
+            <section className="md:col-span-3">
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-5 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-bold">🕹️ 遊戲區（手機可玩／免登入）</h2>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setGameType("2048")} className={"rounded-full px-3 py-1 text-xs " + (gameType === "2048" ? "bg-yellow-400 text-black" : "bg-neutral-800 text-white")}>2048</button>
+                    <button onClick={() => setGameType("reaction")} className={"rounded-full px-3 py-1 text-xs " + (gameType === "reaction" ? "bg-yellow-400 text-black" : "bg-neutral-800 text-white")}>計時挑戰</button>
+                  </div>
+                </div>
+                {gameType === "2048" ? (
+                  <Game2048 onScore={handleIncomingScore} />
+                ) : (
+                  <ReactionGame onScore={handleIncomingScore} />
+                )}
+              </div>
+
+              {/* How-to */}
+              <div className="mt-4 rounded-3xl border border-white/10 bg-black/40 p-5">
+                <h3 className="mb-2 text-lg font-semibold">玩法說明</h3>
+                {gameType === "2048" ? (
+                  <ol className="list-decimal space-y-1 pl-6 text-sm text-slate-300">
+                    <li>以滑動（手機）或方向鍵（電腦）移動方塊。</li>
+                    <li>相同數字會合併成更大的數字，並累積分數。</li>
+                    <li>每一步會隨機生成新方塊（2 或 4）。</li>
+                    <li>沒有可移動步數即結束，可按「上傳分數」。</li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal space-y-1 pl-6 text-sm text-slate-300">
+                    <li>選擇難度（目標時間）。</li>
+                    <li>按「開始」後，盯著大圓圈計時。</li>
+                    <li>在你覺得接近目標時間時按「停止」。</li>
+                    <li>分數＝1000 − |實際 − 目標|（越接近越高）。</li>
+                    <li>按「上傳成績」即可送出至右側排行榜。</li>
+                  </ol>
+                )}
+              </div>
+            </section>
+
+            {/* Right: Profile + Leaderboard */}
+            <aside className="md:col-span-2">
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
+                <h2 className="mb-3 text-xl font-bold">👤 參賽者資訊（免登入）</h2>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">暱稱（必填）</label>
+                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：光之工程師_Lin" className="w-full rounded-2xl bg-neutral-900 px-4 py-3 text-white placeholder:text-slate-500" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">廠區</label>
+                    <select value={plant} onChange={(e) => setPlant(e.target.value)} className="w-full rounded-2xl bg-neutral-900 px-4 py-3 text-white">
+                      {PLANTS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">部門（選填）</label>
+                    <input value={dept} onChange={(e) => setDept(e.target.value)} placeholder="如：研發一處 / 製造二廠" className="w-full rounded-2xl bg-neutral-900 px-4 py-3 text-white placeholder:text-slate-500" />
+                  </div>
+                  <p className="text-xs text-slate-500">備註：此頁個資僅存於瀏覽器記憶；雲端僅存成績。</p>
+                </div>
+              </div>
+
+              <div id="lb_section" className="mt-4 rounded-3xl border border-white/10 bg-black/40 p-5">
+                <div className="mb-3 flex items中心 justify-between">
+                  <h2 className="text-xl font-bold">🏆 即時排行榜</h2>
+                  <span className="rounded-full bg-blue-500/20 px-3 py-1 text-xs text-blue-300">依分數高→低排序</span>
+                </div>
+                <Leaderboard data={sorted} highlight={lastId} />
+              </div>
+            </aside>
+          </main>
+
+          <footer className="mx-auto max-w-6xl px-4 pb-10 pt-4 text-center text-xs text-slate-500">富采 Engineer Week 線上挑戰｜示範頁（手機友善／免登入）</footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+
+  <!--
+  ==============================
+  Supabase `scores` 建表與 RLS（請在 SQL Editor 執行）
+  ==============================
+  create table if not exists public.scores (
+    id         text primary key,
+    name       text not null,
+    plant      text not null,
+    dept       text,
+    mode       text not null,        -- 'easy' | 'pro' | 'insane' | '2048'
+    modeLabel  text not null,
+    target     integer not null,     -- reaction 目標毫秒；2048 一律 0
+    elapsed    integer not null,     -- reaction 實際毫秒；2048 步數
+    score      integer not null check (score >= 0),
+    created_at timestamptz not null default now()
+  );
+
+  alter table public.scores enable row level security;
+
+  create policy if not exists scores_select_public
+  on public.scores for select to anon using (true);
+
+  create policy if not exists scores_insert_public
+  on public.scores for insert to anon with check (
+    score between 0 and 500000
+    and elapsed between 0 and 10000
+    and target between 0 and 5000
+    and char_length(name) between 1 and 40
+  );
+
+  -- Realtime：Database → Replication → Configure → 勾選 `scores`
+  -->
+</body>
+</html>
